@@ -1,0 +1,12 @@
+bin/
+obj/
+tests/bin/
+tests/obj/
+*.lnk
+.vs/
+.idea/
+*.user
+*.suo
+.env
+.env.*
+settings.json

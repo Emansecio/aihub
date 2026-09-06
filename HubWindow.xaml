@@ -1,0 +1,115 @@
+<Window x:Class="AIHub.HubWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AIHub" Icon="/AIHub;component/Assets/AIHub.ico" Width="241.2" Height="171.52" WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="True" Background="Transparent" Topmost="True" ShowInTaskbar="False"
+        ShowActivated="False" UseLayoutRounding="False" FontFamily="Segoe UI">
+    <Window.Resources>
+        <Style x:Key="BareButton" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="#F3F2EF"/>
+            <Setter Property="Background" Value="{x:Null}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value><ControlTemplate TargetType="Button">
+                    <Border x:Name="ButtonSurface" Background="{TemplateBinding Background}" CornerRadius="34">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonSurface" Property="Opacity" Value="0.72"/></Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ButtonSurface" Property="Effect"><Setter.Value>
+                                <DropShadowEffect Color="#D891EC" BlurRadius="7" ShadowDepth="0" Opacity="0.55"/>
+                            </Setter.Value></Setter>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate></Setter.Value>
+            </Setter>
+        </Style>
+        <LinearGradientBrush x:Key="ArcGlass" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#595571" Offset="0"/>
+            <GradientStop Color="#302D42" Offset="0.27"/>
+            <GradientStop Color="#08080B" Offset="0.50"/>
+            <GradientStop Color="#272333" Offset="0.71"/>
+            <GradientStop Color="#5B4C70" Offset="1"/>
+        </LinearGradientBrush>
+        <RadialGradientBrush x:Key="IndicatorLight" Center="0.5,0.6" GradientOrigin="0.5,0.6" RadiusX="0.58" RadiusY="0.58">
+            <GradientStop Color="#FFE1FF" Offset="0"/>
+            <GradientStop Color="#F79BFF" Offset="0.5"/>
+            <GradientStop Color="#BC50DF" Offset="1"/>
+        </RadialGradientBrush>
+    </Window.Resources>
+    <!-- Coordinates follow the first mock, relative to its screen edge and arc top.
+         Scale the complete design uniformly so the knob, saddle and ring retain their proportions. -->
+    <Viewbox Stretch="Uniform">
+        <Canvas x:Name="Surface" Width="900" Height="640" Background="{x:Null}">
+            <Canvas.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="HubScale" CenterY="310"/>
+                    <TranslateTransform x:Name="HubSlide"/>
+                </TransformGroup>
+            </Canvas.RenderTransform>
+            <Canvas x:Name="Dial" Width="474" Height="640">
+                <Path x:Name="DragHandle" Fill="Black"
+                      Data="M 0,140 C 65,184 101,172 152,175 C 232,168 298,224 298,310 C 298,395 244,446 170,448 C 99,451 53,445 0,478 Z"
+                      Cursor="SizeNS"
+                      PreviewMouseLeftButtonDown="DragStart" PreviewMouseMove="DragMove" PreviewMouseLeftButtonUp="DragEnd"
+                      AutomationProperties.Name="Ajustar posição do hub"/>
+                <Path x:Name="OuterArc" Data="M 195,2 C 274,10 345,46 400,98 C 444,152 466,232 466,310 C 466,388 444,468 400,522 C 345,576 274,610 201,620 C 168,624 147,605 147,575 L 147,550 C 147,530 161,514 183,506 C 267,480 321,413 337,354 C 348,326 348,294 337,266 C 314,207 263,140 183,114 C 161,107 147,99 147,76 L 147,43 C 147,15 168,0 195,2 Z">
+                    <Path.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#C66B75A6" Offset="0"/><GradientStop Color="#C675628F" Offset="1"/>
+                    </LinearGradientBrush></Path.Fill>
+                </Path>
+                <Path x:Name="SelectionArc" Fill="{StaticResource ArcGlass}" Stroke="#050507" StrokeThickness="3"
+                      Data="M 348,91 C 365,80 380,87 393,104 C 438,164 464,235 464,310 C 464,385 438,456 393,516 C 380,535 365,542 348,531 L 310,497 C 293,482 291,465 302,447 C 333,398 342,357 342,310 C 342,263 330,222 302,175 C 291,157 293,140 310,124 Z"/>
+                <Canvas x:Name="AppIcons" Width="474" Height="640"/>
+                <Button x:Name="LaunchButton" Canvas.Left="53" Canvas.Top="189" Width="242" Height="242"
+                        Style="{StaticResource BareButton}" Click="LaunchClick" AutomationProperties.AutomationId="LaunchSelected">
+                    <Canvas Width="242" Height="242">
+                        <Ellipse Width="242" Height="242">
+                            <Ellipse.Fill><LinearGradientBrush StartPoint="0.4,0" EndPoint="0.6,1">
+                                <GradientStop Color="#CDCECA" Offset="0"/><GradientStop Color="#777874" Offset="0.18"/>
+                                <GradientStop Color="#343532" Offset="0.41"/><GradientStop Color="#080909" Offset="0.72"/>
+                                <GradientStop Color="#171817" Offset="1"/>
+                            </LinearGradientBrush></Ellipse.Fill>
+                        </Ellipse>
+                        <Ellipse Canvas.Left="9" Canvas.Top="9" Width="224" Height="224">
+                            <Ellipse.Fill><LinearGradientBrush StartPoint="0.25,0" EndPoint="0.65,1">
+                                <GradientStop Color="#070708" Offset="0"/><GradientStop Color="#171718" Offset="0.44"/>
+                                <GradientStop Color="#252525" Offset="0.70"/><GradientStop Color="#4C4D49" Offset="0.91"/>
+                                <GradientStop Color="#92948A" Offset="1"/>
+                            </LinearGradientBrush></Ellipse.Fill>
+                        </Ellipse>
+                        <Canvas x:Name="NeonPulse" Width="242" Height="242" IsHitTestVisible="False">
+                        <Ellipse x:Name="CollapsedGlow" Canvas.Left="2" Canvas.Top="2" Width="238" Height="238"
+                                 Stroke="#DC9AFF" StrokeThickness="6" Opacity="0" IsHitTestVisible="False">
+                            <Ellipse.Effect><DropShadowEffect Color="#B63AFF" BlurRadius="30" ShadowDepth="0" Opacity="1" RenderingBias="Quality"/></Ellipse.Effect>
+                        </Ellipse>
+                        </Canvas>
+                        <Ellipse x:Name="Indicator" Canvas.Left="194" Canvas.Top="108" Width="20" Height="25" Fill="{StaticResource IndicatorLight}">
+                            <Ellipse.Effect><DropShadowEffect Color="#D348FF" BlurRadius="19" ShadowDepth="0" Opacity="1" RenderingBias="Quality"/></Ellipse.Effect>
+                        </Ellipse>
+                    </Canvas>
+                </Button>
+                <Button x:Name="HideButton" Canvas.Left="162" Canvas.Top="532" Width="68" Height="68"
+                        Style="{StaticResource BareButton}" AutomationProperties.Name="Ocultar hub">
+                    <Grid Width="68" Height="68">
+                        <Ellipse Fill="#805A526E"/>
+                        <Path Data="M 22,22 L 46,46 M 46,22 L 22,46" Stroke="#9FA0A9" StrokeThickness="4" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    </Grid>
+                </Button>
+            </Canvas>
+            <Canvas x:Name="Label" Canvas.Left="480" Canvas.Top="263" Height="94" IsHitTestVisible="False">
+                <Path x:Name="LabelShape" Stroke="#0E0B13" StrokeThickness="2.5">
+                    <Path.Fill><LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#E84C435F" Offset="0"/><GradientStop Color="#ED402C50" Offset="1"/>
+                    </LinearGradientBrush></Path.Fill>
+                </Path>
+                <TextBlock x:Name="AppName" Canvas.Left="69" Canvas.Top="16" Foreground="#F5F3F1" FontSize="46" FontWeight="Normal" MaxWidth="292" TextTrimming="CharacterEllipsis"/>
+            </Canvas>
+            <Border x:Name="ErrorPanel" Canvas.Left="480" Canvas.Top="376" Width="396" Padding="14,9" CornerRadius="10" Background="#F5412B3D" Visibility="Collapsed" IsHitTestVisible="False">
+                <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Foreground="#FFF0F4" FontSize="17"/>
+            </Border>
+        </Canvas>
+    </Viewbox>
+</Window>
