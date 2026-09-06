@@ -40,6 +40,12 @@ internal static class Program
                 if (entry.Executable != null) Check(File.Exists(entry.Executable), $"executável disponível: {entry.Name}");
             }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            if (args.Contains("--shell-only"))
+            {
+                TestShellVisibility(apps);
+                Console.WriteLine($"PASS: {checks} verificações.");
+                return 0;
+            }
             if (args.Contains("--reorder-only"))
             {
                 TestReordering(apps);
@@ -48,6 +54,7 @@ internal static class Program
             }
             if (args.Contains("--features-only"))
             {
+                TestShellVisibility(apps);
                 TestCustomShortcuts(apps);
                 TestReordering(apps);
                 TestFullScreen(apps);
@@ -134,6 +141,7 @@ internal static class Program
             right.Close();
 
             TestCustomShortcuts(apps);
+            TestShellVisibility(apps);
             TestReordering(apps);
             TestFullScreen(apps);
             TestAutoCollapse(apps);
@@ -339,6 +347,22 @@ internal static class Program
         args.RoutedEvent = routedEvent;
         hub.RaiseEvent(args);
         return args;
+    }
+
+    private static void TestShellVisibility(IReadOnlyList<AppEntry> apps)
+    {
+        var hub = new HubWindow(apps, new FakeLauncher(), new Settings(), false);
+        try
+        {
+            hub.Show(); Pump(80);
+            var hwnd = new WindowInteropHelper(hub).Handle;
+            int style = NativeMethods.GetWindowStyle(hwnd, -20);
+            Check((style & 0x80) != 0 && (style & 0x40000) == 0, "janela usa estilo de ferramenta sem entrada própria no Alt+Tab");
+            Check((style & 0x80008) == 0x80008 && !hub.ShowInTaskbar, "exclusão do Alt+Tab preserva transparência, topmost e ausência na barra de tarefas");
+            hub.Hide(); hub.Show(); Pump(80);
+            Check((NativeMethods.GetWindowStyle(hwnd, -20) & 0x40080) == 0x80 && hub.IsVisible, "reabrir mantém a exclusão do Alt+Tab");
+        }
+        finally { hub.Close(); }
     }
 
     private static void TestReordering(IReadOnlyList<AppEntry> initialApps)

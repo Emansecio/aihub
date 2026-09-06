@@ -13,6 +13,18 @@ internal static class NativeMethods
     [DllImport("user32.dll")] internal static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(IntPtr hwnd, StringBuilder name, int count);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] internal static extern int GetWindowStyle(IntPtr hwnd, int index);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)] private static extern int SetWindowStyle(IntPtr hwnd, int index, int style);
+
+    internal static void ExcludeFromAltTab(IntPtr hwnd)
+    {
+        const int extendedStyle = -20, toolWindow = 0x80, appWindow = 0x40000;
+        int current = GetWindowStyle(hwnd, extendedStyle);
+        int desired = (current | toolWindow) & ~appWindow;
+        if (current == desired) return;
+        int previous = SetWindowStyle(hwnd, extendedStyle, desired);
+        int error = Marshal.GetLastPInvokeError();
+        if (previous == 0 && error != 0) throw new System.ComponentModel.Win32Exception(error);
+    }
     [DllImport("user32.dll")] internal static extern bool GetWindowRect(IntPtr hwnd, out Rect bounds);
     [DllImport("dwmapi.dll")] internal static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out Rect bounds, int size);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern IntPtr FindWindow(string? className, string windowName);

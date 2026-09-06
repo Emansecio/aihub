@@ -125,6 +125,9 @@ public partial class HubWindow : Window
         };
         SourceInitialized += (_, _) =>
         {
+            // ShowInTaskbar alone does not exclude a borderless WPF window from Alt+Tab.
+            // Explicit taskbar windows are used only by the visual-review test mode.
+            if (!ShowInTaskbar) NativeMethods.ExcludeFromAltTab(new WindowInteropHelper(this).Handle);
             if (!desktopIntegration) return;
             source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
             source.AddHook(WindowMessage);

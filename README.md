@@ -73,6 +73,7 @@ O catálogo inicial inclui **Codex / GPT, Cursor, Hermes, Grok Bot e Terminal**.
 - Arraste a parte exposta da base preta, junto à borda da tela, para ajustar a altura.
 - Botão direito: escolher lateral, monitor, centralizar, ocultar ou sair.
 - **Ctrl + Alt + Espaço** mostra/oculta o hub, quando o atalho está disponível. O ícone na bandeja também permite reabrir.
+- A janela do hub fica fora do **Alt+Tab** e da barra de tarefas; o acesso permanece pela bandeja e pelo atalho global.
 - Com o hub em foco, use as setas para escolher, Enter/Espaço para abrir e Esc para ocultar.
 
 ### Preferências locais
