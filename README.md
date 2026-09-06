@@ -35,6 +35,7 @@ Role para selecionar. Clique para abrir. Ao tirar o mouse, o hub recolhe com uma
 | --- | --- |
 | Seleção radial | Percorra aplicativos com o scroll |
 | Atalhos por arraste | Solte `.exe` ou `.lnk` sobre o hub |
+| Ordem por arraste | Segure um ícone e mova para cima ou para baixo |
 | Recolhimento imediato | Libere a tela ao tirar o mouse |
 | Neon pulsante | Encontre o botão junto à borda |
 | Ocultação em tela cheia | Mantenha o hub fora do caminho |
@@ -62,6 +63,7 @@ O catálogo inicial inclui **Codex / GPT, Cursor, Hermes, Grok Bot e Terminal**.
 - Role o mouse sobre o botão ou o arco para escolher Codex / GPT, Cursor, Hermes, Grok Bot ou Terminal.
 - Clique no botão circular para abrir a seleção. Se uma janela existente puder ser ativada, ela é trazida para frente.
 - Clicar em um ícone apenas seleciona aquele aplicativo.
+- Para **reorganizar**, segure um ícone do arco e arraste para cima ou para baixo. Os outros ícones mudam de posição; segurar perto de uma extremidade avança pela lista a cada 450 ms. Solte para salvar a ordem e manter o aplicativo arrastado selecionado. `Esc` cancela a troca; um clique simples continua apenas selecionando e o scroll continua navegando.
 - Ao tirar o mouse do hub, ele começa a recolher **imediatamente**, com animação de 360 ms. O botão recolhido tem cerca de **57 px**, com contorno e brilho neon violeta. Passar o mouse expande novamente ao tamanho atual. A animação pode ser interrompida suavemente; menus, arraste e seleção de arquivo suspendem o recolhimento. Ao abrir o programa ou revelá-lo pelo atalho, há 3 segundos para alcançar o hub com o mouse.
 - O **Terminal** abre pelo atalho registrado do Windows, sem argumentos ou comandos enviados pelo hub. Ele segue as configurações de inicialização do próprio Terminal; você escolhe a pasta e executa seus comandos normalmente.
 - Para acrescentar outros aplicativos: botão direito no hub → **Adicionar atalho…** → escolha um `.exe` ou `.lnk`. Atalhos do Windows mantêm seus próprios argumentos e pasta inicial. O hub continua do mesmo tamanho, mostrando quatro ícones por vez durante o scroll.
@@ -75,7 +77,7 @@ O catálogo inicial inclui **Codex / GPT, Cursor, Hermes, Grok Bot e Terminal**.
 
 ### Preferências locais
 
-O programa salva a seleção, os atalhos personalizados, a lateral, o monitor e a altura em `%LOCALAPPDATA%\AIHub\settings.json`. Esses dados e os atalhos particulares não acompanham o repositório. Abrir o executável novamente solicita a exibição da instância já aberta.
+O programa salva a seleção, a ordem dos aplicativos, os atalhos personalizados, a lateral, o monitor e a altura em `%LOCALAPPDATA%\AIHub\settings.json`. Esses dados e os atalhos particulares não acompanham o repositório. Abrir o executável novamente solicita a exibição da instância já aberta.
 
 ### Iniciar com o Windows
 

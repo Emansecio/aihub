@@ -14,6 +14,7 @@ public sealed class Settings
     public double VerticalPosition { get; set; } = 0.5;
     public string Monitor { get; set; } = "";
     public List<CustomShortcut> CustomShortcuts { get; set; } = new();
+    public List<string> AppOrder { get; set; } = new();
     public static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AIHub", "settings.json");
 
     public static Settings Load(string? path = null)
@@ -23,6 +24,7 @@ public sealed class Settings
             var value = JsonSerializer.Deserialize<Settings>(File.ReadAllText(path ?? FilePath)) ?? new Settings();
             value.VerticalPosition = double.IsFinite(value.VerticalPosition) ? Math.Clamp(value.VerticalPosition, 0, 1) : 0.5;
             value.CustomShortcuts ??= new();
+            value.AppOrder ??= new();
             return value;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new Settings(); }

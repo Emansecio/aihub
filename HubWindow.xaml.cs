@@ -24,11 +24,23 @@ public partial class HubWindow : Window
     private Selection selection;
     private readonly bool desktopIntegration;
     private readonly List<OrbitButton> icons = new();
-    private readonly Dictionary<int, int> previousSlots = new();
+    private readonly Dictionary<OrbitButton, int> previousSlots = new();
     private readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer feedbackTimer = new() { Interval = TimeSpan.FromMilliseconds(1200) };
     private readonly DispatcherTimer idleTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly DispatcherTimer fullScreenTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(750) };
+    private readonly DispatcherTimer reorderTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
+    private OrbitButton? draggedIcon;
+    private bool reordering;
+    private Point reorderStart;
+    private double reorderGrabOffset;
+    private double reorderY;
+    private int reorderAnchor;
+    private int reorderSlot;
+    private int reorderEdge;
+    private AppEntry[]? orderBeforeDrag;
+    private OrbitButton[]? iconsBeforeDrag;
+    private string? selectionBeforeDrag;
     private Forms.NotifyIcon? tray;
     private System.Drawing.Icon? trayIcon;
     private HwndSource? source;
@@ -51,7 +63,10 @@ public partial class HubWindow : Window
 
     public HubWindow(IReadOnlyList<AppEntry> apps, IAppLauncher launcher, Settings settings, bool desktopIntegration = true)
     {
-        this.apps = apps.ToList();
+        var ranks = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string id in settings.AppOrder ?? new())
+            if (!string.IsNullOrWhiteSpace(id)) ranks.TryAdd(id, ranks.Count);
+        this.apps = apps.OrderBy(app => ranks.GetValueOrDefault(app.Id, int.MaxValue)).ToList();
         this.launcher = launcher;
         this.settings = settings;
         this.desktopIntegration = desktopIntegration;
@@ -78,7 +93,7 @@ public partial class HubWindow : Window
         };
         ApplySide();
         UpdateSelection(false);
-        PreviewMouseWheel += (_, e) => { if (selection.Scroll(e.Delta)) UpdateSelection(); e.Handled = true; };
+        PreviewMouseWheel += (_, e) => { if (!reordering && selection.Scroll(e.Delta)) UpdateSelection(); e.Handled = true; };
         PreviewKeyDown += OnKeyDown;
         ContextMenu = CreateMenu();
         saveTimer.Tick += (_, _) => { saveTimer.Stop(); SaveSettings(); };
@@ -94,6 +109,7 @@ public partial class HubWindow : Window
             if (IsVisible) RegisterActivity();
             else
             {
+                FinishIconDrag(false);
                 fileDragActive = false;
                 idleTimer.Stop(); feedbackTimer.Stop();
                 Indicator.Opacity = 1;
@@ -117,6 +133,7 @@ public partial class HubWindow : Window
             Dock();
         };
         fullScreenTimer.Tick += (_, _) => CheckFullScreen();
+        reorderTimer.Tick += (_, _) => AdvanceReorderEdge();
         Loaded += (_, _) =>
         {
             if (desktopIntegration) { Dock(); fullScreenTimer.Start(); CheckFullScreen(); }
@@ -126,6 +143,7 @@ public partial class HubWindow : Window
         Closed += (_, _) =>
         {
             closed = true;
+            FinishIconDrag(false);
             fullScreenTimer.Stop();
             UpdatePulse();
             saveTimer.Stop(); feedbackTimer.Stop(); idleTimer.Stop();
@@ -142,7 +160,7 @@ public partial class HubWindow : Window
         };
     }
 
-    private bool CanIdle() => !closed && IsVisible && !pointerInside && !dragging && !fileDragActive && !idleSuspended && ContextMenu?.IsOpen != true && ErrorPanel.Visibility != Visibility.Visible;
+    private bool CanIdle() => !closed && IsVisible && !pointerInside && !dragging && draggedIcon == null && !fileDragActive && !idleSuspended && ContextMenu?.IsOpen != true && ErrorPanel.Visibility != Visibility.Visible;
 
     private void ScheduleIdle()
     {
@@ -207,6 +225,108 @@ public partial class HubWindow : Window
         NeonPulse.BeginAnimation(OpacityProperty, pulse);
     }
 
+    internal bool IsReordering => reordering;
+
+    internal void PrepareIconDrag(int index, Point dialPosition)
+    {
+        FinishIconDrag(false);
+        if (index < 0 || index >= icons.Count || icons[index].Visibility != Visibility.Visible) return;
+        draggedIcon = icons[index];
+        reorderStart = Dial.TransformToAncestor(this).Transform(dialPosition);
+        reorderGrabOffset = dialPosition.Y - (310 + 246 * Math.Sin(draggedIcon.Angle * Math.PI / 180));
+    }
+
+    internal void DragIconTo(Point dialPosition)
+    {
+        if (draggedIcon == null) return;
+        bool started = !reordering;
+        if (!reordering)
+        {
+            var delta = Dial.TransformToAncestor(this).Transform(dialPosition) - reorderStart;
+            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance
+                && Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            // Button owns mouse capture from its normal press handler; keep this transition independent of input dispatch.
+            orderBeforeDrag = apps.ToArray();
+            iconsBeforeDrag = icons.ToArray();
+            selectionBeforeDrag = apps[selection.Index].Id;
+            reorderAnchor = selection.Index;
+            int index = icons.IndexOf(draggedIcon);
+            reorderSlot = (index - reorderAnchor + apps.Count) % apps.Count;
+            if (reorderSlot >= (apps.Count + 1) / 2) reorderSlot -= apps.Count;
+            reordering = true;
+            selection.Select(index);
+            idleTimer.Stop(); saveTimer.Stop();
+            Panel.SetZIndex(draggedIcon, 10);
+            draggedIcon.Cursor = Cursors.SizeNS;
+            draggedIcon.Effect = new System.Windows.Media.Effects.DropShadowEffect
+            { Color = Color.FromRgb(196, 130, 255), BlurRadius = 12, ShadowDepth = 0, Opacity = 0.8 };
+        }
+
+        reorderY = dialPosition.Y - reorderGrabOffset;
+        int targetSlot = reorderY < 112 ? -2 : reorderY < 235 ? -1 : reorderY < 386 ? 0 : 1;
+        bool moved = targetSlot != reorderSlot;
+        while (reorderSlot != targetSlot)
+        {
+            int direction = Math.Sign(targetSlot - reorderSlot);
+            SwapDraggedIcon(direction);
+            reorderSlot += direction;
+        }
+        if (started || moved) UpdateSelection();
+        else draggedIcon.Angle = Math.Asin((Math.Clamp(reorderY, 65, 461) - 310) / 246) * 180 / Math.PI;
+        int edge = dialPosition.X is >= 100 and <= 540 ? (reorderY <= 90 ? -1 : reorderY >= 455 ? 1 : 0) : 0;
+        if (edge == reorderEdge) return;
+        reorderTimer.Stop();
+        reorderEdge = edge;
+        if (edge != 0) reorderTimer.Start();
+    }
+
+    private void SwapDraggedIcon(int direction)
+    {
+        int index = icons.IndexOf(draggedIcon!);
+        int next = (index + direction + apps.Count) % apps.Count;
+        (apps[index], apps[next]) = (apps[next], apps[index]);
+        (icons[index], icons[next]) = (icons[next], icons[index]);
+        selection.Select(next);
+    }
+
+    internal void AdvanceReorderEdge()
+    {
+        if (!reordering || reorderEdge == 0) return;
+        SwapDraggedIcon(reorderEdge);
+        reorderAnchor = (reorderAnchor + reorderEdge + apps.Count) % apps.Count;
+        UpdateSelection();
+    }
+
+    internal void FinishIconDrag(bool commit)
+    {
+        reorderTimer.Stop();
+        reorderEdge = 0;
+        var button = draggedIcon;
+        draggedIcon = null;
+        bool wasReordering = reordering;
+        reordering = false;
+        if (wasReordering && !commit)
+        {
+            apps.Clear(); apps.AddRange(orderBeforeDrag!);
+            icons.Clear(); icons.AddRange(iconsBeforeDrag!);
+            selection.Select(Math.Max(0, apps.FindIndex(app => app.Id == selectionBeforeDrag)));
+        }
+        orderBeforeDrag = null; iconsBeforeDrag = null; selectionBeforeDrag = null;
+        if (!wasReordering) { ScheduleIdle(); return; } // Let Button handle capture and click for a normal press.
+        Panel.SetZIndex(button!, 0);
+        button!.ClearValue(CursorProperty);
+        button.ClearValue(EffectProperty);
+        button.ReleaseMouseCapture();
+        UpdateSelection(IsVisible && !closed);
+        if (commit)
+        {
+            settings.AppOrder = apps.Select(app => app.Id).ToList();
+            saveTimer.Stop();
+            SaveSettings();
+        }
+        ScheduleIdle();
+    }
+
     private void BuildIcons()
     {
         icons.Clear();
@@ -214,7 +334,6 @@ public partial class HubWindow : Window
         AppIcons.Children.Clear();
         for (int i = 0; i < apps.Count; i++)
         {
-            int index = i;
             FrameworkElement content = apps[i].Icon is { } icon
                 ? new Image { Source = icon, Width = 60, Height = 60, Stretch = Stretch.Uniform }
                 : new TextBlock { Text = apps[i].Monogram, FontSize = 54, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White };
@@ -222,7 +341,22 @@ public partial class HubWindow : Window
             var button = new OrbitButton { Width = 72, Height = 72, Content = content, Style = (Style)FindResource("BareButton") };
             AutomationProperties.SetName(button, $"Selecionar {apps[i].Name}");
             AutomationProperties.SetAutomationId(button, "Select_" + apps[i].Id);
-            button.Click += (_, _) => { selection.Select(index); UpdateSelection(); };
+            button.Click += (_, _) => { selection.Select(icons.IndexOf(button)); UpdateSelection(); };
+            button.PreviewMouseLeftButtonDown += (_, e) => PrepareIconDrag(icons.IndexOf(button), e.GetPosition(Dial));
+            button.PreviewMouseMove += (_, e) =>
+            {
+                if (draggedIcon != button) return;
+                if (e.LeftButton != MouseButtonState.Pressed || !button.IsMouseCaptured) { FinishIconDrag(false); return; }
+                DragIconTo(e.GetPosition(Dial));
+                if (reordering) e.Handled = true;
+            };
+            button.PreviewMouseLeftButtonUp += (_, e) =>
+            {
+                bool wasReordering = reordering;
+                FinishIconDrag(true);
+                if (wasReordering) e.Handled = true;
+            };
+            button.LostMouseCapture += (_, _) => { if (draggedIcon == button && !button.IsMouseCaptured) FinishIconDrag(false); };
             icons.Add(button);
             AppIcons.Children.Add(button);
         }
@@ -232,12 +366,12 @@ public partial class HubWindow : Window
     {
         for (int i = 0; i < icons.Count; i++)
         {
-            int slot = (i - selection.Index + apps.Count) % apps.Count;
+            int slot = (i - (reordering ? reorderAnchor : selection.Index) + apps.Count) % apps.Count;
             if (slot >= (apps.Count + 1) / 2) slot -= apps.Count;
             double angle = slot == -2 ? -85 : slot * 38;
             double opacity = slot == 0 ? 1 : 0.40;
             var button = icons[i];
-            bool wasVisible = button.Visibility == Visibility.Visible && previousSlots.ContainsKey(i);
+            bool wasVisible = button.Visibility == Visibility.Visible && previousSlots.ContainsKey(button);
             // Keep the existing four visual positions. Additional shortcuts circulate
             // through them without expanding the hub or covering its close button.
             button.Visibility = slot is >= -2 and <= 1 ? Visibility.Visible : Visibility.Collapsed;
@@ -245,20 +379,21 @@ public partial class HubWindow : Window
             {
                 button.BeginAnimation(OrbitButton.AngleProperty, null);
                 button.BeginAnimation(OpacityProperty, null);
-                previousSlots[i] = slot;
+                previousSlots[button] = slot;
                 continue;
             }
-            bool wraps = !wasVisible || previousSlots.TryGetValue(i, out int old) && Math.Abs(slot - old) > 1;
+            bool wraps = !wasVisible || previousSlots.TryGetValue(button, out int old) && Math.Abs(slot - old) > 1;
             double oldAngle = button.Angle;
             button.BeginAnimation(OrbitButton.AngleProperty, null);
-            button.Angle = angle;
-            if (animate && !wraps && double.IsFinite(oldAngle) && SystemParameters.ClientAreaAnimation)
+            bool isDragged = reordering && button == draggedIcon;
+            button.Angle = isDragged ? Math.Asin((Math.Clamp(reorderY, 65, 461) - 310) / 246) * 180 / Math.PI : angle;
+            if (!isDragged && animate && !wraps && double.IsFinite(oldAngle) && SystemParameters.ClientAreaAnimation)
                 button.BeginAnimation(OrbitButton.AngleProperty, new DoubleAnimation(oldAngle, angle, TimeSpan.FromMilliseconds(220)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
             button.BeginAnimation(OpacityProperty, null);
-            button.Opacity = opacity;
-            if (animate && SystemParameters.ClientAreaAnimation)
+            button.Opacity = isDragged ? 1 : opacity;
+            if (!isDragged && animate && SystemParameters.ClientAreaAnimation)
                 button.BeginAnimation(OpacityProperty, new DoubleAnimation(wraps ? 0 : Math.Min(opacity + 0.3, 1), opacity, TimeSpan.FromMilliseconds(180)));
-            previousSlots[i] = slot;
+            previousSlots[button] = slot;
         }
         AppName.Text = apps[selection.Index].Name;
         UpdateLabel();
@@ -266,7 +401,7 @@ public partial class HubWindow : Window
         RegisterActivity();
         AutomationProperties.SetName(LaunchButton, "Abrir " + apps[selection.Index].Name);
         settings.SelectedId = apps[selection.Index].Id;
-        if (desktopIntegration) { saveTimer.Stop(); saveTimer.Start(); }
+        if (desktopIntegration && !reordering && !closed) { saveTimer.Stop(); saveTimer.Start(); }
     }
 
     private void UpdateLabel()
@@ -317,6 +452,12 @@ public partial class HubWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
+        if (reordering)
+        {
+            if (e.Key == Key.Escape) FinishIconDrag(false);
+            e.Handled = true;
+            return;
+        }
         if (e.Key != Key.Escape) RegisterActivity();
         switch (e.Key)
         {
@@ -330,7 +471,7 @@ public partial class HubWindow : Window
     private ContextMenu CreateMenu()
     {
         var menu = new ContextMenu();
-        menu.Opened += (_, _) => { idleTimer.Stop(); RegisterActivity(); };
+        menu.Opened += (_, _) => { FinishIconDrag(false); idleTimer.Stop(); RegisterActivity(); };
         menu.Closed += (_, _) => ScheduleIdle();
         void Add(string text, Action action) { var item = new MenuItem { Header = text }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Add("Lateral esquerda", () => ChangeSide(false));
@@ -435,6 +576,7 @@ public partial class HubWindow : Window
 
     public void AddShortcut(string path)
     {
+        FinishIconDrag(false);
         path = Path.GetFullPath(path);
         int existing = apps.FindIndex(a => string.Equals(a.Target, path, StringComparison.OrdinalIgnoreCase));
         if (existing >= 0) { selection.Select(existing); UpdateSelection(); return; }
@@ -449,6 +591,7 @@ public partial class HubWindow : Window
 
     public void RemoveShortcut(string id)
     {
+        FinishIconDrag(false);
         if (settings.CustomShortcuts.RemoveAll(s => s?.Id == id) == 0) return;
         string selectedId = apps[selection.Index].Id;
         apps.RemoveAll(a => a.Id == id);
@@ -458,6 +601,7 @@ public partial class HubWindow : Window
 
     private void RebuildShortcuts()
     {
+        settings.AppOrder = apps.Select(app => app.Id).ToList();
         BuildIcons();
         ApplySide();
         UpdateSelection(false);

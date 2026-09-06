@@ -40,9 +40,16 @@ internal static class Program
                 if (entry.Executable != null) Check(File.Exists(entry.Executable), $"executável disponível: {entry.Name}");
             }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+            if (args.Contains("--reorder-only"))
+            {
+                TestReordering(apps);
+                Console.WriteLine($"PASS: {checks} verificações.");
+                return 0;
+            }
             if (args.Contains("--features-only"))
             {
                 TestCustomShortcuts(apps);
+                TestReordering(apps);
                 TestFullScreen(apps);
                 TestAutoCollapse(apps);
                 Console.WriteLine($"PASS: {checks} verificações.");
@@ -54,14 +61,16 @@ internal static class Program
                 Console.WriteLine($"PASS: {checks} verificações.");
                 return 0;
             }
-            if (args.Contains("--visual-review"))
+            if (args.Contains("--visual-review") || args.Contains("--reorder-review"))
             {
                 app.ShutdownMode = ShutdownMode.OnMainWindowClose;
-                var previewSettings = Settings.Load();
-                var preview = new HubWindow(AppCatalog.Discover(previewSettings.CustomShortcuts), new AppLauncher(), previewSettings)
+                bool isolated = args.Contains("--reorder-review");
+                var previewSettings = isolated ? new Settings() : Settings.Load();
+                var preview = new HubWindow(AppCatalog.Discover(previewSettings.CustomShortcuts), new AppLauncher(), previewSettings, !isolated)
                 {
                     ShowInTaskbar = true
                 };
+                if (isolated) { preview.Title = "AIHub - teste de arraste"; preview.Left = 1000; preview.Top = 300; }
                 app.Run(preview);
                 return 0;
             }
@@ -125,6 +134,7 @@ internal static class Program
             right.Close();
 
             TestCustomShortcuts(apps);
+            TestReordering(apps);
             TestFullScreen(apps);
             TestAutoCollapse(apps);
 
@@ -329,6 +339,92 @@ internal static class Program
         args.RoutedEvent = routedEvent;
         hub.RaiseEvent(args);
         return args;
+    }
+
+    private static void TestReordering(IReadOnlyList<AppEntry> initialApps)
+    {
+        var entries = initialApps.Concat(new[] {
+            new AppEntry("extra-a", "Extra A", "A", "", null, null),
+            new AppEntry("extra-b", "Extra B", "B", "", null, null)
+        }).ToArray();
+        var settings = new Settings { AppOrder = entries.Select(app => app.Id).ToList() };
+        var fake = new FakeLauncher();
+        var hub = new HubWindow(entries, fake, settings, false) { Left = 1000, Top = 300 };
+        string savedPath = Path.Combine(AppContext.BaseDirectory, "order-test-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            hub.Show(); Enter(hub); Pump(100);
+            var codex = ((Canvas)hub.FindName("AppIcons")).Children.OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Select_codex");
+            hub.PrepareIconDrag(0, new Point(402, 310));
+            hub.DragIconTo(new Point(402, 312));
+            Check(!hub.IsReordering, "movimento pequeno preserva clique simples sem iniciar reorganização");
+            hub.FinishIconDrag(true);
+            codex.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(hub.SelectedIndex == 0 && fake.Opened.Count == 0, "clique simples continua selecionando sem abrir");
+
+            hub.PrepareIconDrag(0, new Point(402, 310));
+            hub.DragIconTo(new Point(354, 461));
+            Check(hub.IsReordering && hub.SelectedIndex == 1, "arrastar para baixo troca com o próximo aplicativo");
+            Check(settings.AppOrder.SequenceEqual(entries.Select(app => app.Id)), "ordem persistida permanece intacta durante arraste");
+            Wheel(hub, -120);
+            Check(hub.SelectedIndex == 1, "scroll durante arraste não muda a seleção");
+            hub.AdvanceReorderEdge(); Pump(500);
+            Check(hub.SelectedIndex == 3, "extremidade avança por aplicativos além das posições iniciais");
+            Capture(hub, "hub-reordering.png");
+            hub.FinishIconDrag(true); Pump(280);
+            string[] reordered = { "cursor", "hermes", "grok", "codex", "terminal", "extra-a", "extra-b" };
+            Check(settings.AppOrder.SequenceEqual(reordered) && settings.SelectedId == "codex" && fake.Opened.Count == 0, "soltar salva a nova ordem e mantém aplicativo arrastado selecionado sem abrir");
+            hub.AdvanceReorderEdge();
+            Check(hub.SelectedIndex == 3, "avanço automático termina ao soltar");
+
+            settings.Save(savedPath);
+            var restored = new HubWindow(entries, fake, Settings.Load(savedPath), false);
+            try
+            {
+                restored.Show(); Pump(80);
+                Check(restored.SelectedIndex == 3, "ordem e seleção são restauradas em nova janela");
+                Wheel(restored, -120);
+                Check(((TextBlock)restored.FindName("AppName")).Text == "Terminal", "scroll segue a ordem reorganizada após reabrir");
+            }
+            finally { restored.Close(); }
+
+            Enter(hub); Pump(280);
+            hub.PrepareIconDrag(3, new Point(402, 310));
+            hub.DragIconTo(new Point(354, 159));
+            Check(hub.IsReordering && hub.SelectedIndex == 2, "arrastar para cima troca com o aplicativo anterior");
+            var escape = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(hub), 0, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+            hub.RaiseEvent(escape);
+            Check(!hub.IsReordering && hub.IsVisible && hub.SelectedIndex == 3 && settings.AppOrder.SequenceEqual(reordered), "Escape cancela reorganização sem ocultar e restaura ordem anterior");
+            Pump(280);
+            hub.PrepareIconDrag(3, new Point(402, 310));
+            hub.DragIconTo(new Point(354, 461));
+            codex.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.LostMouseCaptureEvent });
+            Check(!hub.IsReordering && hub.SelectedIndex == 3, "perder captura cancela arraste e restaura seleção");
+            Pump(280);
+            hub.PrepareIconDrag(3, new Point(402, 310));
+            hub.DragIconTo(new Point(354, 461));
+            hub.Hide();
+            Check(!hub.IsReordering && settings.AppOrder.SequenceEqual(reordered), "ocultar durante arraste cancela sem persistir ordem parcial");
+            hub.Show(); Enter(hub); Pump(280);
+            var grok = ((Canvas)hub.FindName("AppIcons")).Children.OfType<Button>().Single(b => AutomationProperties.GetAutomationId(b) == "Select_grok");
+            grok.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(hub.SelectedIndex == 2 && settings.SelectedId == "grok", "cliques continuam ligados ao aplicativo correto após reorganização");
+
+            var rightSettings = new Settings { RightSide = true, AppOrder = new() { "missing", "extra-a", "extra-a", "codex" }, SelectedId = "extra-a" };
+            var right = new HubWindow(entries, fake, rightSettings, false) { Left = 1000, Top = 300 };
+            try
+            {
+                right.Show(); Enter(right); Pump(100);
+                Check(right.SelectedIndex == 0, "ordem salva ignora IDs ausentes e duplicados e aceita aplicativos personalizados");
+                right.PrepareIconDrag(0, new Point(402, 310));
+                right.DragIconTo(new Point(354, 159));
+                right.FinishIconDrag(true);
+                Check(rightSettings.AppOrder.SequenceEqual(new[] { "extra-b", "codex", "cursor", "hermes", "grok", "terminal", "extra-a" }), "arraste na lateral direita cruza início da lista sem perder aplicativos");
+                Check(rightSettings.SelectedId == "extra-a", "atalho personalizado permanece selecionado depois da troca circular");
+            }
+            finally { right.Close(); }
+        }
+        finally { hub.Close(); File.Delete(savedPath); }
     }
 
     private static void TestFullScreen(IReadOnlyList<AppEntry> apps)
